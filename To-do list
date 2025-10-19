@@ -1,0 +1,203 @@
+import json
+import os
+from datetime import datetime
+
+# --- Configuration ---
+DATA_FILE = 'todo_list_data.json'
+
+# --- 1. Task Data Structure ---
+class Task:
+    """Represents a single task item."""
+    def __init__(self, description, priority='Medium', due_date=None, completed=False):
+        self.description = description
+        self.priority = priority
+        self.due_date = due_date  # Stored as a string (YYYY-MM-DD)
+        self.completed = completed
+
+    def to_dict(self):
+        """Converts the Task object to a dictionary for JSON saving."""
+        return {
+            'description': self.description,
+            'priority': self.priority,
+            'due_date': self.due_date,
+            'completed': self.completed
+        }
+
+    @staticmethod
+    def from_dict(data):
+        """Creates a Task object from a dictionary loaded from JSON."""
+        return Task(
+            description=data['description'],
+            priority=data.get('priority', 'Medium'),
+            due_date=data.get('due_date'),
+            completed=data.get('completed', False)
+        )
+
+# --- 2. List Management (Core Logic) ---
+class ToDoList:
+    """Manages the collection of tasks and handles data persistence."""
+    def __init__(self):
+        self.tasks = []
+        self._load_tasks()
+
+    def _load_tasks(self):
+        """Loads tasks from the JSON file."""
+        if os.path.exists(DATA_FILE):
+            try:
+                with open(DATA_FILE, 'r') as f:
+                    data = json.load(f)
+                    self.tasks = [Task.from_dict(d) for d in data]
+            except (json.JSONDecodeError, FileNotFoundError):
+                # Handle empty or corrupted file gracefully
+                self.tasks = []
+        else:
+            self.tasks = []
+
+    def _save_tasks(self):
+        """Saves current tasks to the JSON file."""
+        with open(DATA_FILE, 'w') as f:
+            # Convert list of Task objects to list of dictionaries
+            data = [task.to_dict() for task in self.tasks]
+            json.dump(data, f, indent=4)
+
+    def add_task(self, description, priority, due_date):
+        """Adds a new task to the list and saves."""
+        new_task = Task(description, priority, due_date)
+        self.tasks.append(new_task)
+        self._save_tasks()
+        print(f"\n✅ Task added: '{description}'")
+
+    def view_tasks(self):
+        """Displays all tasks, categorized by status."""
+        if not self.tasks:
+            print("\nYour to-do list is empty! Time to add a task. 🚀")
+            return
+
+        print("\n" + "="*50)
+        print(f"{'ID':<4}{'Status':<10}{'Description':<30}{'Priority':<10}{'Due Date':<10}")
+        print("-" * 50)
+        
+        # Sort by completion status (Incomplete first) and then by priority
+        sorted_tasks = sorted(self.tasks, key=lambda t: (t.completed, t.priority))
+        
+        for i, task in enumerate(sorted_tasks):
+            status = "✅" if task.completed else "⏳"
+            priority_color = self._get_priority_color(task.priority)
+            
+            # Simple formatting for the CLI
+            print(f"{i+1:<4}{status:<10}{task.description[:28]:<30}{priority_color(task.priority):<10}{task.due_date if task.due_date else 'N/A':<10}")
+        print("="*50)
+
+    def mark_complete(self, task_id):
+        """Marks a task as complete."""
+        try:
+            task_index = int(task_id) - 1
+            if 0 <= task_index < len(self.tasks):
+                task = self.tasks[task_index]
+                task.completed = not task.completed # Toggle status
+                status = "COMPLETED" if task.completed else "PENDING"
+                self._save_tasks()
+                print(f"\n🔄 Task {task_id} ('{task.description}') status updated to: {status}")
+            else:
+                print(f"\n❌ Error: Task ID {task_id} is out of range.")
+        except ValueError:
+            print("\n❌ Error: Invalid input. Please enter a valid number for the task ID.")
+        
+    def delete_task(self, task_id):
+        """Deletes a task from the list."""
+        try:
+            task_index = int(task_id) - 1
+            if 0 <= task_index < len(self.tasks):
+                deleted_task = self.tasks.pop(task_index)
+                self._save_tasks()
+                print(f"\n🗑️ Task {task_id} ('{deleted_task.description}') deleted successfully.")
+            else:
+                print(f"\n❌ Error: Task ID {task_id} is out of range.")
+        except ValueError:
+            print("\n❌ Error: Invalid input. Please enter a valid number for the task ID.")
+
+    def _get_priority_color(self, priority):
+        """Simple helper for visual emphasis (using basic text)."""
+        if priority == 'High':
+            return lambda s: f"\033[91m{s}\033[0m" # Red
+        elif priority == 'Medium':
+            return lambda s: f"\033[93m{s}\033[0m" # Yellow
+        else: # Low
+            return lambda s: f"\033[92m{s}\033[0m" # Green
+
+
+# --- 4. User Interface (CLI Menu) ---
+def get_valid_priority():
+    """Prompts user for a valid priority level."""
+    while True:
+        p = input("Enter priority (High/Medium/Low, default is Medium): ").strip().capitalize()
+        if not p:
+            return 'Medium'
+        if p in ['High', 'Medium', 'Low']:
+            return p
+        print("Invalid priority. Please enter High, Medium, or Low.")
+
+def get_valid_date():
+    """Prompts user for a valid date in YYYY-MM-DD format."""
+    while True:
+        date_str = input("Enter due date (YYYY-MM-DD) or leave blank: ").strip()
+        if not date_str:
+            return None
+        try:
+            datetime.strptime(date_str, '%Y-%m-%d')
+            return date_str
+        except ValueError:
+            print("Invalid date format. Please use YYYY-MM-DD.")
+
+def main_menu():
+    """Displays the main menu options."""
+    print("\n" + "#" * 30)
+    print("      TO-DO LIST MANAGER")
+    print("#" * 30)
+    print("1. View Tasks")
+    print("2. Add Task")
+    print("3. Mark/Unmark Complete")
+    print("4. Delete Task")
+    print("5. Exit")
+    return input("Enter your choice (1-5): ")
+
+def main():
+    """Main function to run the application loop."""
+    todo_list = ToDoList()
+
+    while True:
+        choice = main_menu()
+
+        if choice == '1':
+            todo_list.view_tasks()
+
+        elif choice == '2':
+            description = input("Enter new task description: ").strip()
+            if description:
+                priority = get_valid_priority()
+                due_date = get_valid_date()
+                todo_list.add_task(description, priority, due_date)
+            else:
+                print("Task description cannot be empty.")
+
+        elif choice == '3':
+            todo_list.view_tasks()
+            task_id = input("Enter the ID of the task to mark/unmark: ").strip()
+            if task_id:
+                todo_list.mark_complete(task_id)
+
+        elif choice == '4':
+            todo_list.view_tasks()
+            task_id = input("Enter the ID of the task to delete: ").strip()
+            if task_id:
+                todo_list.delete_task(task_id)
+
+        elif choice == '5':
+            print("\nGoodbye! Your tasks have been saved. 👋")
+            break
+
+        else:
+            print("\n⚠️ Invalid choice. Please enter a number between 1 and 5.")
+
+if __name__ == "__main__":
+    main()
